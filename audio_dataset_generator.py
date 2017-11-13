@@ -2,6 +2,8 @@ import os
 import sys
 import random
 import librosa
+import pywt
+import math
 import numpy as np
 import tensorflow as tf
 
@@ -134,6 +136,8 @@ class AudioDatasetGenerator:
         NOTE: the augmentation process should be parameterised."""
         file_names = os.listdir(data_path)
         fft_frames = []
+        self.x_frames = []
+        self.y_frames = []
         for file in file_names:
             if file.endswith('.wav'):
                 file = os.path.join(data_path, file)
@@ -156,9 +160,90 @@ class AudioDatasetGenerator:
             sys.stdout.flush()
 
             x = fft_frames[i:i + self.sequence_length]
-            y = fft_frames[i + self.sequence_length + 1]
-            self.x_frames += [x]
-            self.y_frames += [y]
+            y = fft_frames[i + self.sequence_length]
+            self.x_frames.append(x)
+            self.y_frames.append(y)
 
         sys.stdout.write('100% data generation complete.')
         sys.stdout.flush()
+
+
+class AudioWaveletDatasetGenerator:
+    """
+    Class for wavelets
+    """
+
+    def __init__(self, window_size=1024, sequence_length=16, sample_rate=44100, wavelet='db10'):
+        """Inits the class. Set the fft values to have a significant effect on
+        the training of the neural network."""
+        self.x_frames = []
+        self.y_frames = []
+        self.window_size = window_size
+        print(self.window_size)
+        self.sample_rate = sample_rate
+        self.sequence_length = sequence_length
+        self.coeff_slices = []
+        self.wavelet = wavelet
+        
+    def load(self, data_path, force=False):
+        """Loads the dataset from either the binary numpy file, or generates
+        from a folder of wav files specified at the data_path."""
+        x_frames_name = os.path.join(data_path, "x_frames.npy")
+        y_frames_name = os.path.join(data_path, "y_frames.npy")
+        if os.path.isfile(x_frames_name) and os.path.isfile(y_frames_name) and force == False:
+            self.x_frames = np.load(x_frames_name)
+            self.y_frames = np.load(y_frames_name)
+        elif os.path.exists(data_path):
+            self._generate_data(data_path)
+            self.x_frames = np.array(self.x_frames)
+            self.y_frames = np.array(self.y_frames)
+            self.x_frames, self.y_frames = self.unison_shuffled_copies(self.x_frames,
+                                                                       self.y_frames)
+            np.save(x_frames_name, self.x_frames)
+            np.save(y_frames_name, self.y_frames)
+        else:
+            raise ValueError("Couldn't load files from the supplied path.")
+
+    def unison_shuffled_copies(self, a, b):
+        """Shuffle NumPy arrays in unison."""
+        assert len(a) == len(b)
+        p = np.random.permutation(len(a))
+        return a[p], b[p]
+            
+    def _generate_data(self, data_path):
+        """Create some data from a folder of wav files.
+        NOTE: the augmentation process should be parameterised."""
+        file_names = os.listdir(data_path)
+
+        self.x_frames = []
+        self.y_frames = []
+        ws = self.window_size
+        for file in file_names:
+            if file.endswith('.wav'):
+                file = os.path.join(data_path, file)
+                data, sample_rate = librosa.load(file, sr=self.sample_rate, mono=True)
+                data = np.append(np.zeros(self.window_size * self.sequence_length), data)
+                for offset in range(0, 1):
+                    wavelet_frames = []
+                    sys.stdout.write('{} offset   \r'.format(offset))
+                    sys.stdout.flush()
+                    for i in range (0, math.floor((len(data)-offset)/float(ws))):
+                        coeffs = pywt.wavedec(data[(i*ws)+offset:(i*ws+ws)+offset], self.wavelet)
+                        coeff_arr, self.coeff_slices = pywt.coeffs_to_array(coeffs) #slices to flat array
+                        wavelet_frames.append(coeff_arr) 
+
+                    start = 0
+                    end = len(wavelet_frames) - self.sequence_length
+                    assert end > 0
+                    step = 1
+                    for i in range(start, end, step):
+                        x = wavelet_frames[i:i + self.sequence_length]
+                        y = wavelet_frames[i + self.sequence_length]
+                        self.x_frames.append(x)
+                        self.y_frames.append(y)
+                done = int(float(offset) / float(1020) * 100.0)
+                sys.stdout.write('{}% data generation complete.   \r'.format(done))
+                sys.stdout.flush()
+        sys.stdout.write('100% data generation complete.')
+        sys.stdout.flush()
+        
