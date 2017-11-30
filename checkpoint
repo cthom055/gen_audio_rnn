@@ -1,2 +1,2 @@
-model_checkpoint_path: "/notebooks/gen_audio_rnn/model.tfl"
-all_model_checkpoint_paths: "/notebooks/gen_audio_rnn/model.tfl"
+model_checkpoint_path: "/notebooks/gen_audio_rnn/models-336"
+all_model_checkpoint_paths: "/notebooks/gen_audio_rnn/models-336"

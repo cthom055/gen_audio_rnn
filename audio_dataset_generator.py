@@ -143,7 +143,7 @@ class AudioDatasetGenerator:
                 file = os.path.join(data_path, file)
                 data, sample_rate = librosa.load(file, sr=self.sample_rate,
                                                  mono=True)
-                
+                data = np.append(np.zeros(self.window_size * self.sequence_length), data)
                 mags_phases = librosa.stft(data, n_fft=self.fft_size,
                                            win_length=self.window_size,
                                            hop_length=self.hop_size)
